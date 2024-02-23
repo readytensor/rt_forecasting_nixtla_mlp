@@ -3,7 +3,7 @@
   "lags_forecast_ratio": 4,
   "num_layers": 1,
   "hidden_size": 100,
-  "max_steps": 1,
+  "max_steps": 1000,
   "learning_rate": 0.001,
   "num_lr_decays": 2,
   "local_scaler_type": "minmax",
