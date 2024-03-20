@@ -113,5 +113,4 @@ def parse_arguments() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
-    run_training(run_tuning=args.tune)
+    run_training()
