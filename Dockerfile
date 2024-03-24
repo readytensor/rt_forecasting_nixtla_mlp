@@ -1,17 +1,14 @@
 FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04 as builder
 
 
-RUN apt-get -y update && apt-get install -y --no-install-recommends \
+# Update and install all required packages in a single RUN command to reduce layers
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    dos2unix \
-    && rm -rf /var/lib/apt/lists/*
-
-# install python and pip and add symbolic link to python3
-RUN apt-get -y update && apt-get install -y --no-install-recommends \
     python3.9 \
     python3-pip \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/python3 /usr/bin/python
+    && ln -s /usr/bin/python3.9 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
 
 RUN pip3 install --upgrade pip
 
