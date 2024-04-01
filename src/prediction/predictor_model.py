@@ -116,7 +116,7 @@ class Forecaster:
         if frequency == ["secondly"]:
             return "S"
         else:
-            return "S"
+            return 1
 
     def prepare_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
