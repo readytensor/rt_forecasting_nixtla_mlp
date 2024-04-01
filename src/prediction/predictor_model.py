@@ -34,7 +34,6 @@ class Forecaster:
         local_scaler_type: str = None,
         num_samples: int = 10,
         random_state: int = 0,
-        trainer_kwargs: dict = {},
         **kwargs,
     ):
         """Construct a new MLP Forecaster
@@ -57,8 +56,6 @@ class Forecaster:
 
             num_samples (int): Number of samples to use for the AutoMLP model.
 
-            trainer_kwargs (dict): keyword trainer arguments inherited from PyTorch Lighning's trainer.
-
             random_state (int): Sets the underlying random seed at model initialization time.
         """
         self.data_schema = data_schema
@@ -73,15 +70,6 @@ class Forecaster:
             self.history_length = (
                 self.data_schema.forecast_length * history_forecast_ratio
             )
-
-        if torch.cuda.is_available():
-            logger.info("GPU is available")
-        else:
-            logger.info("GPU is not available")
-            if trainer_kwargs.get("accelerator") == "gpu":
-                trainer_kwargs.pop("accelerator")
-
-        self.trainer_kwargs = trainer_kwargs
 
         self.hpt_config = {
             "max_steps": 100,
