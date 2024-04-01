@@ -1,8 +1,7 @@
 # Use a specific version of nvidia/cuda base image
 FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04 as builder
 
-RUN mkdir -p /tmp/ray \
-    chmod 777 /tmp/ray
+
 
 # Install dependencies, python, pip, and add symbolic link to python3 in a single RUN to reduce layers
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,6 +31,11 @@ ENV MPLCONFIGDIR=/tmp/matplotlib \
     PYTHONUNBUFFERED=TRUE \
     PYTHONDONTWRITEBYTECODE=TRUE \
     PATH="/opt/app:${PATH}"
+
+RUN mkdir -p /tmp/ray \
+    && chown 1000:1000 /tmp/ray \
+    && chmod 777 /tmp/ray
+
 
 # Set non-root user and entrypoint
 USER 1000
