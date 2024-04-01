@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 from schema.data_schema import ForecastingSchema
 from sklearn.exceptions import NotFittedError
-from neuralforecast.models import MLP
+from neuralforecast.auto import AutoMLP
 from neuralforecast import NeuralForecast
-from pytorch_lightning.callbacks import EarlyStopping
+from ray import tune
 import torch
 from logger import get_logger
 
@@ -31,20 +31,8 @@ class Forecaster:
         self,
         data_schema: ForecastingSchema,
         history_forecast_ratio: int = None,
-        lags_forecast_ratio: int = None,
-        lags: int = None,
-        num_layers: int = 2,
-        hidden_size: int = 128,
-        max_steps: int = 1000,
-        learning_rate: float = 0.001,
-        num_lr_decays: int = -1,
-        batch_size: int = 32,
-        early_stopping: bool = False,
-        early_stop_patience_steps: int = 50,
-        min_delta: float = 0.0005,
-        step_size: int = 1,
         local_scaler_type: str = None,
-        use_exogenous: bool = True,
+        num_samples: int = 10,
         random_state: int = 0,
         trainer_kwargs: dict = {},
         **kwargs,
@@ -61,54 +49,21 @@ class Forecaster:
                 For example, if the forecast horizon is 20 and the history_forecast_ratio is 10,
                 history length will be 20*10 = 200 samples.
 
-            lags_forecast_ratio (int):
-                Sets the lags parameters depending on the forecast horizon.
-                lags = forecast horizon * lags_forecast_ratio
-                This parameters overides lags parameter and uses the most recent values as lags.
 
-            lags (int): Lags of the target to use as features.
-
-            num_layers (int): Number of layers for the MLP.
-
-            hidden_size (int): Number of units for each layer of the MLP.
-
-            max_steps (int): maximum number of training steps.
-
-            learning_rate (float): Learning rate between (0, 1).
-
-            num_lr_decays (int): Number of learning rate decays, evenly distributed across max_steps.
-
-            batch_size (int): Number of different series in each batch.
-
-            early_stopping (bool): If true, uses early stopping.
-
-            early_stop_patience_steps (int): Number of validation iterations before early stopping.
-
-            min_delta (float): Minimum improvement required by the early stopped.
-
-            step_size (int): Step size between each window of temporal data.
 
             local_scaler_type (str):
                 Scaler to apply per-serie to all features before fitting, which is inverted after predicting.
                 Can be 'standard', 'robust', 'robust-iqr', 'minmax' or 'boxcox'
 
-            use_exogenous (bool): If true, uses covariates in training.
+            num_samples (int): Number of samples to use for the AutoMLP model.
 
             trainer_kwargs (dict): keyword trainer arguments inherited from PyTorch Lighning's trainer.
 
             random_state (int): Sets the underlying random seed at model initialization time.
         """
         self.data_schema = data_schema
-        self.lags = lags
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-        self.max_steps = max_steps
-        self.learning_rate = learning_rate
-        self.num_lr_decays = num_lr_decays
-        self.batch_size = batch_size
-        self.step_size = step_size
         self.local_scaler_type = local_scaler_type
-        self.use_exogenous = use_exogenous
+        self.num_samples = num_samples
         self.random_state = random_state
         self._is_trained = False
         self.kwargs = kwargs
@@ -119,20 +74,6 @@ class Forecaster:
                 self.data_schema.forecast_length * history_forecast_ratio
             )
 
-        if lags_forecast_ratio:
-            self.lags = lags_forecast_ratio * self.data_schema.forecast_length
-
-        stopper = EarlyStopping(
-            monitor="train_loss",
-            patience=early_stop_patience_steps,
-            min_delta=min_delta,
-            verbose=True,
-            mode="min",
-        )
-
-        if early_stopping:
-            trainer_kwargs["callbacks"] = [stopper]
-
         if torch.cuda.is_available():
             logger.info("GPU is available")
         else:
@@ -142,15 +83,15 @@ class Forecaster:
 
         self.trainer_kwargs = trainer_kwargs
 
-        self.hist_exog_list = None
-        self.stat_exog_list = None
-
-        if use_exogenous:
-            if data_schema.past_covariates:
-                self.hist_exog_list = data_schema.past_covariates
-
-            if data_schema.static_covariates:
-                self.stat_exog_list = data_schema.static_covariates
+        self.hpt_config = {
+            "max_steps": 100,
+            "learning_rate": tune.loguniform(1e-5, 1e-1),
+            "num_layers": tune.randint(1, 5),
+            "hidden_size": tune.randint(10, 100),
+            "num_lr_decays": 2,
+            "input_size": tune.randint(5, 100),
+            "random_seed": self.random_state,
+        }
 
     def map_frequency(self, frequency: str) -> str:
         """
@@ -207,15 +148,14 @@ class Forecaster:
                 all_series[index] = series.iloc[-self.history_length :]
             data = pd.concat(all_series).drop(columns="index")
 
-        if not self.use_exogenous:
-            if self.data_schema.future_covariates:
-                data.drop(columns=self.data_schema.future_covariates, inplace=True)
+        if self.data_schema.future_covariates:
+            data.drop(columns=self.data_schema.future_covariates, inplace=True)
 
-            if self.data_schema.static_covariates:
-                data.drop(columns=self.data_schema.static_covariates, inplace=True)
+        if self.data_schema.static_covariates:
+            data.drop(columns=self.data_schema.static_covariates, inplace=True)
 
-            if self.data_schema.past_covariates:
-                data.drop(columns=self.data_schema.past_covariates, inplace=True)
+        if self.data_schema.past_covariates:
+            data.drop(columns=self.data_schema.past_covariates, inplace=True)
 
         data.rename(
             columns={
@@ -289,24 +229,11 @@ class Forecaster:
 
         history = self.prepare_data(history)
 
-        series_length = history.groupby("unique_id")["y"].count().iloc[0]
-
-        self._validate_lags_and_history_length(series_length=series_length)
-
         models = [
-            MLP(
+            AutoMLP(
                 h=self.data_schema.forecast_length,
-                hist_exog_list=self.hist_exog_list,
-                stat_exog_list=self.stat_exog_list,
-                input_size=self.lags,
-                num_layers=self.num_layers,
-                hidden_size=self.hidden_size,
-                max_steps=self.max_steps,
-                learning_rate=self.learning_rate,
-                num_lr_decays=self.num_lr_decays,
-                batch_size=self.batch_size,
-                step_size=self.step_size,
-                random_seed=self.random_state,
+                num_samples=self.num_samples,
+                config=self.hpt_config,
                 **self.trainer_kwargs,
             )
         ]
@@ -317,14 +244,9 @@ class Forecaster:
             local_scaler_type=self.local_scaler_type,
         )
 
-        static_df = None
-        if self.use_exogenous and len(self.data_schema.static_covariates) > 0:
-            static_df = self.generate_static_exogenous(history)
-
-        self.model.fit(df=history, static_df=static_df)
+        self.model.fit(df=history)
         self._is_trained = True
         self.history = history
-        self.static_df = static_df
 
     def predict(
         self, test_data: pd.DataFrame, prediction_col_name: str
@@ -348,13 +270,8 @@ class Forecaster:
             },
             inplace=True,
         )
-        futr_df = None
-        if self.use_exogenous and len(self.data_schema.future_covariates) > 0:
-            futr_df = self.generate_future_exogenous_for_predict(test_data)
 
-        forecast = self.model.predict(
-            df=self.history, futr_df=None, static_df=self.static_df
-        )
+        forecast = self.model.predict(df=self.history)
 
         forecast[prediction_col_name] = forecast.drop(columns=["ds"]).mean(axis=1)
         forecast.reset_index(inplace=True)
