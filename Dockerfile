@@ -32,11 +32,6 @@ ENV MPLCONFIGDIR=/tmp/matplotlib \
     PYTHONDONTWRITEBYTECODE=TRUE \
     PATH="/opt/app:${PATH}"
 
-RUN mkdir -p /tmp/ray \
-    && chown 1000:1000 /tmp/ray \
-    && chmod 777 /tmp/ray
-
-
 # Set non-root user and entrypoint
 USER 1000
 ENTRYPOINT ["/opt/entry_point.sh"]

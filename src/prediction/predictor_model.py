@@ -1,6 +1,7 @@
 import os
 import warnings
 import joblib
+import optuna
 import numpy as np
 import pandas as pd
 from schema.data_schema import ForecastingSchema
@@ -8,7 +9,6 @@ from sklearn.exceptions import NotFittedError
 from neuralforecast.auto import AutoMLP
 from neuralforecast import NeuralForecast
 from logger import get_logger
-import optuna
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore")
