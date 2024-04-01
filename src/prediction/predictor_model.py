@@ -72,7 +72,7 @@ class Forecaster:
             )
 
         config_automl = lambda trial: {
-            "max_steps": 100,
+            "max_steps": 1000,
             "learning_rate": trial.suggest_loguniform("learning_rate", 1e-5, 1e-1),
             "num_layers": trial.suggest_int("num_layers", 1, 5),
             "hidden_size": trial.suggest_int(

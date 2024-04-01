@@ -1,7 +1,7 @@
 {
   "history_forecast_ratio": 20,
   "max_steps": 1000,
-  "num_samples": 4,
+  "num_samples": 10,
   "local_scaler_type": "minmax",
   "early_stopping": true,
   "trainer_kwargs": {
