@@ -3,21 +3,19 @@ import warnings
 import joblib
 import numpy as np
 import pandas as pd
-import ray
-from ray import tune
 from schema.data_schema import ForecastingSchema
 from sklearn.exceptions import NotFittedError
 from neuralforecast.auto import AutoMLP
 from neuralforecast import NeuralForecast
 from logger import get_logger
-from config import paths
+import optuna
 
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore")
 
 
 PREDICTOR_FILE_NAME = "predictor.joblib"
 logger = get_logger(task_name="model")
-ray.init(_temp_dir="/tmp/ray")
 
 
 class Forecaster:
@@ -73,15 +71,17 @@ class Forecaster:
                 self.data_schema.forecast_length * history_forecast_ratio
             )
 
-        self.hpt_config = {
+        config_automl = lambda trial: {
             "max_steps": 100,
-            "learning_rate": tune.loguniform(1e-5, 1e-1),
-            "num_layers": tune.randint(1, 5),
-            "hidden_size": tune.randint(10, 100),
+            "learning_rate": trial.suggest_loguniform("learning_rate", 1e-5, 1e-1),
+            "num_layers": trial.suggest_int("num_layers", 1, 5),
+            "hidden_size": trial.suggest_int("hidden_size", 10, 100),
             "num_lr_decays": 2,
-            "input_size": tune.randint(5, 100),
+            "input_size": trial.suggest_int("input_size", 5, 100),
             "random_seed": self.random_state,
         }
+
+        self.config_automl = config_automl
 
     def map_frequency(self, frequency: str) -> str:
         """
@@ -223,7 +223,8 @@ class Forecaster:
             AutoMLP(
                 h=self.data_schema.forecast_length,
                 num_samples=self.num_samples,
-                config=self.hpt_config,
+                config=self.config_automl,
+                backend="optuna",
             )
         ]
 
@@ -282,6 +283,10 @@ class Forecaster:
         """
         if not self._is_trained:
             raise NotFittedError("Model is not fitted yet.")
+
+        self.model.save(model_dir_path, save_dataset=False, overwrite=True)
+        del self.model
+        del self.config_automl
         joblib.dump(self, os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
 
     @classmethod
@@ -293,8 +298,10 @@ class Forecaster:
         Returns:
             Forecaster: A new instance of the loaded Forecaster.
         """
-        model = joblib.load(os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
-        return model
+        model_object = joblib.load(os.path.join(model_dir_path, PREDICTOR_FILE_NAME))
+        model = NeuralForecast.load(model_dir_path)
+        model_object.model = model
+        return model_object
 
     def __str__(self):
         # sort params alphabetically for unit test to run successfully
