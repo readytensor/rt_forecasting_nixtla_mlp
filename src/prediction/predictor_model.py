@@ -222,7 +222,6 @@ class Forecaster:
                 h=self.data_schema.forecast_length,
                 num_samples=self.num_samples,
                 config=self.hpt_config,
-                **self.trainer_kwargs,
             )
         ]
 
