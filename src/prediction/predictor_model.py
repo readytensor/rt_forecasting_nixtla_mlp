@@ -75,13 +75,13 @@ class Forecaster:
             "max_steps": 1000,
             "learning_rate": trial.suggest_loguniform("learning_rate", 1e-5, 1e-1),
             "num_layers": trial.suggest_int("num_layers", 1, 5),
-            "hidden_size": trial.suggest_int(
-                "hidden_size",
+            "hidden_size": trial.suggest_int("hidden_size", 1, 10),
+            "num_lr_decays": 2,
+            "input_size": trial.suggest_int(
+                "input_size",
                 data_schema.forecast_length * 2,
                 data_schema.forecast_length * 5,
             ),
-            "num_lr_decays": 2,
-            "input_size": trial.suggest_int("input_size", 5, 100),
             "random_seed": self.random_state,
         }
 
