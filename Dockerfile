@@ -2,7 +2,7 @@
 FROM nvidia/cuda:12.2.0-runtime-ubuntu20.04 as builder
 
 RUN mkdir -p /tmp/ray \
-    chmod -R 777 /tmp/ray
+    chmod 777 /tmp/ray
 
 # Install dependencies, python, pip, and add symbolic link to python3 in a single RUN to reduce layers
 RUN apt-get update && apt-get install -y --no-install-recommends \
