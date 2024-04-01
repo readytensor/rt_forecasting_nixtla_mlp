@@ -3,19 +3,21 @@ import warnings
 import joblib
 import numpy as np
 import pandas as pd
+import ray
+from ray import tune
 from schema.data_schema import ForecastingSchema
 from sklearn.exceptions import NotFittedError
 from neuralforecast.auto import AutoMLP
 from neuralforecast import NeuralForecast
-from ray import tune
-import torch
 from logger import get_logger
+from config import paths
 
 warnings.filterwarnings("ignore")
 
 
 PREDICTOR_FILE_NAME = "predictor.joblib"
 logger = get_logger(task_name="model")
+ray.init(_temp_dir="/tmp/ray")
 
 
 class Forecaster:
