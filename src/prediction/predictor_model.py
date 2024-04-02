@@ -85,7 +85,6 @@ class Forecaster:
                     data_schema.forecast_length * 3,
                     data_schema.forecast_length * 4,
                     data_schema.forecast_length * 5,
-                    data_schema.forecast_length * 6,
                 ],
             ),
             "random_seed": self.random_state,
