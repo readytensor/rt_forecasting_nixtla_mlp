@@ -80,9 +80,9 @@ class Forecaster:
             "input_size": trial.suggest_categorical(
                 "input_size",
                 [
+                    data_schema.forecast_length * 2,
                     data_schema.forecast_length * 3,
                     data_schema.forecast_length * 4,
-                    data_schema.forecast_length * 5,
                 ],
             ),
             "random_seed": self.random_state,
