@@ -40,8 +40,7 @@ class Forecaster:
 
         Args:
 
-            data_schema (ForecastingSchema):
-                Schema of training data.
+            data_schema (ForecastingSchema): Schema of training data.
 
             history_forecast_ratio (int):
                 Sets the history length depending on the forecast horizon.
@@ -50,11 +49,10 @@ class Forecaster:
 
 
 
-            local_scaler_type (str):
-                Scaler to apply per-serie to all features before fitting, which is inverted after predicting.
+            local_scaler_type (str): Scaler to apply per-serie to all features before fitting, which is inverted after predicting.
                 Can be 'standard', 'robust', 'robust-iqr', 'minmax' or 'boxcox'
 
-            num_samples (int): Number of samples to use for the AutoMLP model.
+            num_samples (int): Number of trails to use for the AutoMLP model.
 
             random_state (int): Sets the underlying random seed at model initialization time.
         """
@@ -77,12 +75,18 @@ class Forecaster:
                 "learning_rate", [1e-4, 1e-3, 1e-2, 1e-1]
             ),
             "num_layers": trial.suggest_int("num_layers", 1, 3),
-            "hidden_size": trial.suggest_int("hidden_size", 100, 200),
-            "num_lr_decays": 2,
-            "input_size": trial.suggest_int(
+            "hidden_size": trial.suggest_categorical(
+                "hidden_size", [50, 100, 200, 300]
+            ),
+            "num_lr_decays": 3,
+            "input_size": trial.suggest_categorical(
                 "input_size",
-                data_schema.forecast_length * 4,
-                data_schema.forecast_length * 6,
+                [
+                    data_schema.forecast_length * 3,
+                    data_schema.forecast_length * 4,
+                    data_schema.forecast_length * 5,
+                    data_schema.forecast_length * 6,
+                ],
             ),
             "random_seed": self.random_state,
         }
