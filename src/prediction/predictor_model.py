@@ -235,9 +235,14 @@ class Forecaster:
             )
         ]
 
+        freq = (
+            self.map_frequency(self.data_schema.frequency)
+            if self.data_schema.time_col_dtype != "INT"
+            else 1
+        )
         self.model = NeuralForecast(
             models=models,
-            freq=self.map_frequency(self.data_schema.frequency),
+            freq=freq,
             local_scaler_type=self.local_scaler_type,
         )
 
