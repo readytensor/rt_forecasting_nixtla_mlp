@@ -214,65 +214,25 @@ def get_peak_memory_usage():
     return peak_memory / (1024 * 1024)
 
 
-class MemoryMonitor:
-    def __init__(self, interval=0.05):
-        self.interval = interval
-        self.running = False
-        self.thread = threading.Thread(target=self.monitor_loop)
-        self.initial_cpu_memory = None
-        self.peak_cpu_memory = 0
-
-    def monitor_memory(self):
-        process = psutil.Process(os.getpid())
-        current_cpu_memory = process.memory_info().rss
-
-        if self.initial_cpu_memory is None:
-            self.initial_cpu_memory = current_cpu_memory
-
-        self.peak_cpu_memory = max(self.peak_cpu_memory, current_cpu_memory)
-
-    def monitor_loop(self):
-        while self.running:
-            self.monitor_memory()
-            time.sleep(self.interval)
-
-    def start(self):
-        self.running = True
-        self.thread.start()
-
-    def stop(self):
-        self.running = False
-        self.thread.join()
-
-    def get_peak_memory_usage(self):
-        # Convert both CPU and GPU memory usage from bytes to megabytes
-        incremental_cpu_peak_memory = (
-            self.peak_cpu_memory - self.initial_cpu_memory
-        ) / (1024**2)
-
-        return incremental_cpu_peak_memory
-
-
-class ResourceTracker:
+class ResourceTracker(object):
     """
-    This class serves as a context manager to track time, Python-specific,
-    and total system memory allocated by code executed inside it.
+    This class serves as a context manager to track time and
+    memory allocated by code executed inside it.
     """
 
-    def __init__(self, logger, monitoring_interval=0.05):
+    def __init__(self, logger, monitoring_interval):
         self.logger = logger
-        self.monitor = MemoryMonitor(interval=monitoring_interval)
+        self.monitor = MemoryMonitor(logger=logger, interval=monitoring_interval)
 
     def __enter__(self):
-        tracemalloc.start()
         self.start_time = time.time()
+        tracemalloc.start()
         self.monitor.start()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.end_time = time.time()
         self.monitor.stop()
-
         _, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
@@ -291,3 +251,61 @@ class ResourceTracker:
         self.logger.info(
             f"Peak System RAM Usage (Incremental): {process_cpu_peak_memory_mb:.2f} MB"
         )
+
+
+class MemoryMonitor:
+    initial_cpu_memory = None
+    peak_cpu_memory = 0  # Class variable to store peak memory usage
+
+    def __init__(self, interval=20.0, logger=print):
+        self.interval = interval
+        self.logger = logger or print
+        self.running = False
+        self.thread = threading.Thread(target=self.monitor_loop)
+
+    def monitor_memory(self):
+        process = psutil.Process(os.getpid())
+        total_memory = process.memory_info().rss
+
+        # Check if the current memory usage is a new peak and update accordingly
+        self.peak_cpu_memory = max(self.peak_cpu_memory, total_memory)
+        if self.initial_cpu_memory is None:
+            self.initial_cpu_memory = self.peak_cpu_memory
+
+    def monitor_loop(self):
+        """Runs the monitoring process in a loop."""
+        while self.running:
+            self.monitor_memory()
+            time.sleep(self.interval)
+
+    def _schedule_monitor(self):
+        """Internal method to schedule the next execution"""
+        self.monitor_memory()
+        # Only reschedule if the timer has not been canceled
+        if self.timer is not None:
+            self.timer = threading.Timer(self.interval, self._schedule_monitor)
+            self.timer.start()
+
+    def start(self):
+        """Starts the memory monitoring."""
+        if not self.running:
+            self.running = True
+            self.thread.start()
+
+    def stop(self):
+        """Stops the periodic monitoring"""
+        self.running = False
+        self.thread.join()  # Wait for the monitoring thread to finish
+
+    def get_peak_memory_usage(self):
+        # Convert both CPU and GPU memory usage from bytes to megabytes
+        incremental_cpu_peak_memory = (
+            self.peak_cpu_memory - self.initial_cpu_memory
+        ) / (1024**2)
+
+        return incremental_cpu_peak_memory
+
+    @classmethod
+    def get_peak_memory(cls):
+        """Returns the peak memory usage"""
+        return cls.peak_cpu_memory
