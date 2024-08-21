@@ -1,4 +1,6 @@
 {
   "seed_value": 123,
-  "prediction_field_name": "prediction"
+  "prediction_field_name": "prediction",
+  "pretrain": true,
+  "finetune": true
 }

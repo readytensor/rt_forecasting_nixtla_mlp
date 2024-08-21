@@ -1,10 +1,7 @@
 from config import paths
 from data_models.data_validator import validate_data
 from logger import get_logger, log_error
-from prediction.predictor_model import (
-    save_predictor_model,
-    train_predictor_model,
-)
+from prediction.predictor_model import save_predictor_model, train_predictor_model
 from schema.data_schema import load_json_data_schema, save_schema
 from utils import (
     read_csv_in_directory,
@@ -12,6 +9,8 @@ from utils import (
     set_seeds,
     ResourceTracker,
 )
+
+from pretrain import KernelSynthesizer
 
 logger = get_logger(task_name="train")
 
@@ -73,11 +72,32 @@ def run_training(
                 default_hyperparameters_file_path
             )
 
-            forecaster = train_predictor_model(
-                history=validated_data,
-                data_schema=data_schema,
-                hyperparameters=default_hyperparameters,
-            )
+            if not model_config["pretrain"] and not model_config["finetune"]:
+                raise ValueError(
+                    "At least one of 'pretrain' or 'finetune' should be set to True."
+                )
+
+            forecaster = None
+            if model_config["pretrain"]:
+                # pretrain the model
+                logger.info("Pretraining the model...")
+                kernel_synthesizer = KernelSynthesizer()
+                synthetic_data = kernel_synthesizer.generate((10, 100, 1))
+
+                forecaster = train_predictor_model(
+                    data_schema=data_schema,
+                    history=synthetic_data,
+                    hyperparameters=default_hyperparameters,
+                )
+
+            if model_config["finetune"]:
+                forecaster = train_predictor_model(
+                    data_schema=data_schema,
+                    history=validated_data,
+                    hyperparameters=default_hyperparameters,
+                    model=forecaster,
+                    prepare_data=True,
+                )
 
         # save predictor model
         logger.info("Saving forecaster...")

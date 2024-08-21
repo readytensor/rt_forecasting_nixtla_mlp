@@ -29,7 +29,7 @@ class Forecaster:
 
     def __init__(
         self,
-        data_schema: ForecastingSchema,
+        data_schema: ForecastingSchema = None,
         history_forecast_ratio: int = None,
         lags_forecast_ratio: int = None,
         lags: int = None,
@@ -123,11 +123,12 @@ class Forecaster:
             self.lags = lags_forecast_ratio * self.data_schema.forecast_length
 
         stopper = EarlyStopping(
-            monitor="train_loss",
+            monitor="valid_loss",
             patience=early_stop_patience_steps,
             min_delta=min_delta,
             verbose=True,
             mode="min",
+            strict=False,
         )
 
         if early_stopping:
@@ -151,6 +152,30 @@ class Forecaster:
 
             if data_schema.static_covariates:
                 self.stat_exog_list = data_schema.static_covariates
+
+        models = [
+            MLP(
+                h=self.data_schema.forecast_length,
+                hist_exog_list=self.hist_exog_list,
+                stat_exog_list=self.stat_exog_list,
+                input_size=self.lags,
+                num_layers=self.num_layers,
+                hidden_size=self.hidden_size,
+                max_steps=self.max_steps,
+                learning_rate=self.learning_rate,
+                num_lr_decays=self.num_lr_decays,
+                batch_size=self.batch_size,
+                step_size=self.step_size,
+                random_seed=self.random_state,
+                **self.trainer_kwargs,
+            )
+        ]
+
+        self.model = NeuralForecast(
+            models=models,
+            freq=self.map_frequency(self.data_schema.frequency),
+            local_scaler_type=self.local_scaler_type,
+        )
 
     def map_frequency(self, frequency: str) -> str:
         """
@@ -278,53 +303,28 @@ class Forecaster:
     def fit(
         self,
         history: pd.DataFrame,
+        prepare_data: bool = True,
     ) -> None:
         """Fit the Forecaster to the training data.
 
         Args:
             history (pandas.DataFrame): The features of the training data.
+            prepare_data (bool): If True, prepares the data before fitting.
 
         """
         np.random.seed(self.random_state)
-
-        history = self.prepare_data(history)
+        if prepare_data:
+            history = self.prepare_data(history)
+            series_length = history.groupby("unique_id")["y"].count().iloc[0]
+            self._validate_lags_and_history_length(series_length=series_length)
 
         series_length = history.groupby("unique_id")["y"].count().iloc[0]
+        val_size = int(0.2 * series_length) if prepare_data else 0
 
-        self._validate_lags_and_history_length(series_length=series_length)
-
-        models = [
-            MLP(
-                h=self.data_schema.forecast_length,
-                hist_exog_list=self.hist_exog_list,
-                stat_exog_list=self.stat_exog_list,
-                input_size=self.lags,
-                num_layers=self.num_layers,
-                hidden_size=self.hidden_size,
-                max_steps=self.max_steps,
-                learning_rate=self.learning_rate,
-                num_lr_decays=self.num_lr_decays,
-                batch_size=self.batch_size,
-                step_size=self.step_size,
-                random_seed=self.random_state,
-                **self.trainer_kwargs,
-            )
-        ]
-
-        self.model = NeuralForecast(
-            models=models,
-            freq=self.map_frequency(self.data_schema.frequency),
-            local_scaler_type=self.local_scaler_type,
-        )
-
-        static_df = None
-        if self.use_exogenous and len(self.data_schema.static_covariates) > 0:
-            static_df = self.generate_static_exogenous(history)
-
-        self.model.fit(df=history, static_df=static_df)
+        self.model.fit(df=history, use_init_models=False, val_size=val_size)
         self._is_trained = True
         self.history = history
-        self.static_df = static_df
+        self.static_df = None
 
     def predict(
         self, test_data: pd.DataFrame, prediction_col_name: str
@@ -396,29 +396,32 @@ class Forecaster:
 
 
 def train_predictor_model(
-    history: pd.DataFrame,
     data_schema: ForecastingSchema,
+    history: pd.DataFrame,
     hyperparameters: dict,
+    model: Forecaster = None,
+    prepare_data: bool = False,
 ) -> Forecaster:
     """
     Instantiate and train the predictor model.
 
     Args:
-        history (pd.DataFrame): The training data inputs.
         data_schema (ForecastingSchema): Schema of the training data.
+        history (pd.DataFrame): The training data inputs.
         hyperparameters (dict): Hyperparameters for the Forecaster.
+        model (Forecaster): The Forecaster model to train.
+        prepare_data (bool): If True, prepares the data before fitting.
 
     Returns:
         'Forecaster': The Forecaster model
     """
 
-    model = Forecaster(
-        data_schema=data_schema,
-        **hyperparameters,
-    )
-    model.fit(
-        history=history,
-    )
+    if model is None:
+        model = Forecaster(
+            data_schema=data_schema,
+            **hyperparameters,
+        )
+    model.fit(history=history, prepare_data=prepare_data)
     return model
 
 
